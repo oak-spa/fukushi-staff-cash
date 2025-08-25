@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>臨時スタッフ給与計算アプリ</title>
+  <style>
+    body {
+      font-family: 'Helvetica Neue', sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #f5f1e6; /* 木目っぽい淡ベージュ */
+      color: #4b3f2f; /* 濃いブラウン */
+    }
+
+    header {
+      background: #8b5e3c; /* 木のような濃いブラウン */
+      color: #fff;
+      text-align: center;
+      padding: 15px;
+      font-size: 22px;
+      font-weight: bold;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    }
+
+    nav {
+      display: flex;
+      justify-content: space-around;
+      padding: 10px;
+      background: #d9c2a8; /* 薄ブラウン */
+    }
+
+    nav button {
+      background: #a67b5b;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 10px;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+
+    nav button:hover {
+      background: #8b5e3c;
+    }
+
+    .container {
+      padding: 20px;
+    }
+
+    h2 {
+      color: #6b4f3b;
+      border-bottom: 2px solid #d9c2a8;
+      padding-bottom: 5px;
+      margin-bottom: 15px;
+    }
+
+    input, select {
+      width: 100%;
+      padding: 8px;
+      margin: 5px 0 15px;
+      border: 1px solid #c2a78e;
+      border-radius: 8px;
+      font-size: 16px;
+    }
+
+    button.add, button.save, button.delete {
+      background: #a67b5b;
+      border: none;
+      padding: 8px 15px;
+      border-radius: 8px;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+      margin-right: 5px;
+    }
+
+    button.add:hover, button.save:hover, button.delete:hover {
+      background: #8b5e3c;
+    }
+
+    .result {
+      font-weight: bold;
+      margin-top: 10px;
+      color: #4b3f2f;
+    }
+
+    .hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <header>臨時スタッフ給与計算アプリ</header>
+
+  <nav>
+    <button onclick="showPage('payment')">支払入力</button>
+    <button onclick="showPage('history')">履歴</button>
+    <button onclick="showPage('settings')">設定</button>
+  </nav>
+
+  <div class="container">
+    <!-- 支払入力 -->
+    <div id="payment" class="page">
+      <h2>支払入力</h2>
+      <label>施術日</label>
+      <input type="date" id="payDate">
+
+      <label>スタッフ</label>
+      <select id="staffSelect"></select>
+
+      <label>施術人数</label>
+      <input type="number" id="numClients" min="1" max="20">
+
+      <label>施設</label>
+      <select id="facilitySelect"></select>
+
+      <div class="result" id="calcResult">給与: 0円 + 交通費: 0円 = 合計: 0円</div>
+      <button class="save" onclick="savePayment()">登録</button>
+    </div>
+
+    <!-- 履歴 -->
+    <div id="history" class="page hidden">
+      <h2>履歴</h2>
+      <label>月を選択</label>
+      <select id="monthSelect" onchange="renderHistory()"></select>
+      <div id="historyList"></div>
+      <button class="save" onclick="exportCSV()">CSV出力</button>
+    </div>
+
+    <!-- 設定 -->
+    <div id="settings" class="page hidden">
+      <h2>スタッフ登録</h2>
+      <input type="text" id="staffName" placeholder="氏名">
+      <input type="text" id="staffAddress" placeholder="住所">
+      <button class="add" onclick="addStaff()">追加</button>
+      <ul id="staffList"></ul>
+
+      <h2>施設登録</h2>
+      <input type="text" id="facilityName" placeholder="施設名">
+      <input type="text" id="facilityAddress" placeholder="住所">
+      <input type="number" id="facilityDistance" placeholder="距離(km)">
+      <button class="add" onclick="addFacility()">追加</button>
+      <ul id="facilityList"></ul>
+
+      <h2>単価設定</h2>
+      <label>一人当たり給与単価</label>
+      <input type="number" id="unitWage" value="1000">
+      <label>交通費単価(1kmあたり)</label>
+      <input type="number" id="unitFare" value="25">
+      <button class="save" onclick="saveRates()">保存</button>
+    </div>
+  </div>
+
+  <script>
+    let staffs = JSON.parse(localStorage.getItem("staffs")) || [];
+    let facilities = JSON.parse(localStorage.getItem("facilities")) || [];
+    let payments = JSON.parse(localStorage.getItem("payments")) || [];
+    let unitWage = localStorage.getItem("unitWage") || 1000;
+    let unitFare = localStorage.getItem("unitFare") || 25;
+
+    function showPage(page) {
+      document.querySelectorAll('.page').forEach(p => p.classList.add('hidden'));
+      document.getElementById(page).classList.remove('hidden');
+      if(page === "settings") renderSettings();
+      if(page === "payment") renderPayment();
+      if(page === "history") renderHistory();
+    }
+
+    function renderSettings() {
+      // スタッフ
+      let staffList = document.getElementById("staffList");
+      staffList.innerHTML = "";
+      staffs.forEach((s, i) => {
+        staffList.innerHTML += `<li>${s.name} (${s.address})
+          <button class="delete" onclick="deleteStaff(${i})">削除</button></li>`;
+      });
+
+      // 施設
+      let facilityList = document.getElementById("facilityList");
+      facilityList.innerHTML = "";
+      facilities.forEach((f, i) => {
+        facilityList.innerHTML += `<li>${f.name} (${f.distance}km)
+          <button class="delete" onclick="deleteFacility(${i})">削除</button></li>`;
+      });
+
+      document.getElementById("unitWage").value = unitWage;
+      document.getElementById("unitFare").value = unitFare;
+    }
+
+    function renderPayment() {
+      let staffSelect = document.getElementById("staffSelect");
+      let facilitySelect = document.getElementById("facilitySelect");
+      staffSelect.innerHTML = staffs.map(s => `<option>${s.name}</option>`).join("");
+      facilitySelect.innerHTML = facilities.map(f => `<option>${f.name}</option>`).join("");
+
+      document.getElementById("numClients").oninput = calcPayment;
+      facilitySelect.onchange = calcPayment;
+      staffSelect.onchange = calcPayment;
+    }
+
+    function calcPayment() {
+      let num = parseInt(document.getElementById("numClients").value) || 0;
+      let facilityIndex = document.getElementById("facilitySelect").selectedIndex;
+      if(facilityIndex < 0) return;
+      let distance = facilities[facilityIndex]?.distance || 0;
+
+      let salary = num * unitWage;
+      let fare = distance * unitFare * 2;
+      let total = salary + fare;
+
+      document.getElementById("calcResult").innerText =
+        `給与: ${salary}円 + 交通費: ${fare}円 = 合計: ${total}円`;
+      return {salary, fare, total};
+    }
+
+    function savePayment() {
+      let date = document.getElementById("payDate").value;
+      let staff = document.getElementById("staffSelect").value;
+      let facilityIndex = document.getElementById("facilitySelect").selectedIndex;
+      if(facilityIndex < 0) return alert("施設を選択してください");
+      let facility = facilities[facilityIndex].name;
+      let num = parseInt(document.getElementById("numClients").value) || 0;
+      let calc = calcPayment();
+
+      payments.push({date, staff, facility, num, salary: calc.salary, fare: calc.fare, total: calc.total});
+      localStorage.setItem("payments", JSON.stringify(payments));
+      alert("保存しました！");
+    }
+
+    function renderHistory() {
+      let monthSelect = document.getElementById("monthSelect");
+      let months = [...new Set(payments.map(p => p.date.slice(0,7)))];
+      monthSelect.innerHTML = months.map(m => `<option>${m}</option>`).join("");
+      let selectedMonth = monthSelect.value || months[0];
+      let list = document.getElementById("historyList");
+      list.innerHTML = "";
+
+      let filtered = payments.filter(p => p.date.startsWith(selectedMonth));
+      filtered.forEach(p => {
+        list.innerHTML += `<div>${p.date} ${p.staff} ${p.facility} ${p.num}人 → 給与:${p.salary}円 + 交通費:${p.fare}円 = 合計:${p.total}円</div>`;
+      });
+    }
+
+    function exportCSV() {
+      let selectedMonth = document.getElementById("monthSelect").value;
+      let filtered = payments.filter(p => p.date.startsWith(selectedMonth));
+      let csv = "日付,スタッフ,施設,人数,給与,交通費,合計\n";
+      filtered.forEach(p => {
+        csv += `${p.date},${p.staff},${p.facility},${p.num},${p.salary},${p.fare},${p.total}\n`;
+      });
+      let blob = new Blob([csv], { type: "text/csv" });
+      let a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `payments_${selectedMonth}.csv`;
+      a.click();
+    }
+
+    function addStaff() {
+      let name = document.getElementById("staffName").value;
+      let address = document.getElementById("staffAddress").value;
+      if(!name) return;
+      staffs.push({name, address});
+      localStorage.setItem("staffs", JSON.stringify(staffs));
+      renderSettings();
+    }
+
+    function deleteStaff(i) {
+      staffs.splice(i, 1);
+      localStorage.setItem("staffs", JSON.stringify(staffs));
+      renderSettings();
+    }
+
+    function addFacility() {
+      let name = document.getElementById("facilityName").value;
+      let address = document.getElementById("facilityAddress").value;
+      let distance = parseInt(document.getElementById("facilityDistance").value) || 0;
+      if(!name) return;
+      facilities.push({name, address, distance});
+      localStorage.setItem("facilities", JSON.stringify(facilities));
+      renderSettings();
+    }
+
+    function deleteFacility(i) {
+      facilities.splice(i, 1);
+      localStorage.setItem("facilities", JSON.stringify(facilities));
+      renderSettings();
+    }
+
+    function saveRates() {
+      unitWage = document.getElementById("unitWage").value;
+      unitFare = document.getElementById("unitFare").value;
+      localStorage.setItem("unitWage", unitWage);
+      localStorage.setItem("unitFare", unitFare);
+      alert("保存しました！");
+    }
+
+    showPage('payment');
+  </script>
+</body>
+</html>
